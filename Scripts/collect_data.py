@@ -14,6 +14,21 @@ def columnNames():
 
     return columns
 
+def getRowCount():
+    path = "../Data/dataset.csv"
+    count = 0
+
+    if os.path.exists(path):
+        with open(path, "r") as file:
+            read = csv.reader(file)
+
+            # Skip the first row
+            next(read, None)
+
+            for row in read:
+                count+=1
+
+    return count
 
 def saveData(data):
     path = "../Data/dataset.csv"
@@ -36,7 +51,7 @@ def saveData(data):
 
 
 def main():
-    # Label dict
+    # gesture label dict
     KEY_LABEL_MAP = {
         '1': 'pinkie',
         '2': 'two_fingers',
@@ -50,6 +65,7 @@ def main():
     current_gesture = None
     relLandMarks = []
     prevTime = time.time()
+    rows = getRowCount()
 
     cap = cv2.VideoCapture(0)
 
@@ -62,6 +78,10 @@ def main():
         if not success:
             print("Failed to grap video frame")
             break
+
+
+        # Flip the image horizontally
+        img = cv2.flip(img, 1)
 
         # Process the frame and draw lines
         img = detector.findHand(img, draw=True)
@@ -82,6 +102,10 @@ def main():
 
         cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN,
                     3, (255, 255, 255), 3)
+
+        cv2.putText(img, str(f"Num rows: {rows}"), (900, 70), cv2.FONT_HERSHEY_PLAIN,
+                    3, (255, 255, 255), 3)
+
         cv2.imshow("Hand Tracking Video", img)
 
         # Listen for keyboard input
@@ -98,9 +122,10 @@ def main():
                 # Append gesture name
                 row.append(current_gesture)
                 print(f"Gesture: {gesture}")
+
                 # Pass data
                 saveData(row)
-                # print(row)
+                rows+=1
 
         if key == 'q':
             break
