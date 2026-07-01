@@ -54,7 +54,7 @@ class handDetector():
 
         return landMarkList, landMarksNorm
 
-
+    # Method to get the landmarks coordinates relative to wrist point
     def findRelative(self, landMarksNorm):
         relLandMarks = []
 
