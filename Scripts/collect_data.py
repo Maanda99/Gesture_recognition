@@ -53,13 +53,13 @@ def saveData(data):
 def main():
     # gesture label dict
     KEY_LABEL_MAP = {
-        '1': 'pinkie',
-        '2': 'two_fingers',
-        '3': 'three_fingers',
-        '4': 'four_fingers',
-        '5': 'open_palm',
-        '6': 'fist',
-        '7': 'peace'
+        '1': 'open_palm',
+        '2': 'fist',
+        '3': 'peace',
+        '4': 'thumbs_up',
+        '5': 'thumbs_down',
+        '6': 'point',
+        '7': 'okay'
     }
     # Intialize variable
     current_gesture = None
@@ -103,7 +103,7 @@ def main():
         cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN,
                     3, (255, 255, 255), 3)
 
-        cv2.putText(img, str(f"Num rows: {rows}"), (900, 70), cv2.FONT_HERSHEY_PLAIN,
+        cv2.putText(img, str(f"Num rows: {rows}"), (800, 70), cv2.FONT_HERSHEY_PLAIN,
                     3, (255, 255, 255), 3)
 
         cv2.imshow("Hand Tracking Video", img)
