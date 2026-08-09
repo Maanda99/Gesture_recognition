@@ -1,8 +1,10 @@
 import pandas as pd
-import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
 
 
 df = pd.read_csv('../Data/dataset.csv')
@@ -54,17 +56,61 @@ print("X_test shape:", X_test.shape)
 print("y_train shape:", y_train.shape)
 print("y_test shape:", y_test.shape)
 
+# ________________________________________________________________________________________
+print("________________________________________________________________________________________")
+
+# Constructing the architecture based on the list of gestures
+
+model = Sequential([
+    # Layer 1: The input
+    # 128 hidden neurons with ReLU and 63 features
+    Dense(128, activation='relu', input_shape=(63,)),
+
+    # Layer 2: Dropout at 30% rate
+    Dropout(0.3),
+
+    # Layer 3: 64 hidden neurons with ReLU
+    Dense(64, activation='relu'),
+
+    # Layer 4: Dropout at 30% rate
+    Dropout(0.3),
+
+    # Layer 5: Output with 7 neurons and Softmax
+    Dense(7, activation='softmax')
+])
+#printing the overview and parameter metrics
+model.summary()
 
 
+model.compile(
+    optimizer= 'adam',
+    loss= 'categorical_crossentropy',
+    metrics= ['accuracy']
+)
+
+print("Model compiled successfully")
 
 
+early_stop = EarlyStopping(
+    monitor='val_loss',
+    patience=10,
+    restore_best_weights=True
+)
 
+history = model.fit(
+    X_train, y_train,
+    epochs=100,
+    batch_size=32,
+    validation_split=0.2,   # carved from X_train only
+    callbacks=[early_stop]
+)
+print("Model trained successfully")
 
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+print(f"Test Loss: {test_loss:.4f}")
+print(f"Test Accuracy: {test_accuracy:.4f}")
+print("Model tested successfully")
 
-
-
-
-
-
-
+model.save('../Model/gesture_model.h5')
+print("Model saved successfully")
 
