@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
@@ -44,12 +45,17 @@ print("_________________________________________________________________________
 X = df.drop('label', axis=1)
 y = one_hot_labels
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y,
-    test_size= 0.2,
-    stratify= one_hot_labels,
+indices = np.arange(len(X))
+
+X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+    X, y, indices,
+    test_size=0.2,
+    stratify=one_hot_labels,
     random_state=42
 )
+
+np.save('test_indices.npy', idx_test)
+np.save('label_classes.npy', label_encoder.classes_)# Essential bug-prevention layer
 
 print("X_train shape:", X_train.shape)
 print("X_test shape:", X_test.shape)

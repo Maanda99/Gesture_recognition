@@ -15,7 +15,7 @@ def columnNames():
     return columns
 
 def getRowCount():
-    path = "../Data/dataset.csv"
+    path = "../Data/test_dataset.csv"
     count = 0
 
     if os.path.exists(path):
@@ -31,7 +31,7 @@ def getRowCount():
     return count
 
 def saveData(data):
-    path = "../Data/dataset.csv"
+    path = "../Data/test_dataset.csv"
 
     # Check if file exists
     if os.path.exists(path):
