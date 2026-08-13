@@ -11,8 +11,8 @@ BUFFER_SIZE = 7  # number of recent predictions to smooth over
 
 def main():
     # Load model + labels once, before the camera loop starts
-    model = load_model('../Model/gesture_cnn_model.h5')
-    classes = np.load('../Training/label_classes.npy', allow_pickle=True)
+    model = load_model('../../Model/gesture_cnn_model.h5')
+    classes = np.load('../../Training/label_classes.npy', allow_pickle=True)
     print("Model and label classes loaded")
 
     prevTime = time.time()
@@ -61,7 +61,7 @@ def main():
         cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN,
                     3, (255, 255, 255), 3)
 
-        cv2.putText(img, f"Gesture: {displayed_gesture}", (750, 70), cv2.FONT_HERSHEY_PLAIN,
+        cv2.putText(img, f"Gesture: {displayed_gesture}", (700, 70), cv2.FONT_HERSHEY_PLAIN,
                     3, (0, 255, 0), 3)
 
         cv2.imshow("Hand Tracking Video", img)
