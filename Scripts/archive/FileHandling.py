@@ -1,14 +1,14 @@
 import csv
 
 def writing():
-    with open("../Data/Testing.csv", "a") as file:
+    with open("../../Data/Testing.csv", "a") as file:
         file.write("Hello World")
         file.write("Writing test")
 
 
 def reading():
     try:
-        with open("../Data/Testing.csv", "r") as file:
+        with open("../../Data/Testing.csv", "r") as file:
             content = file.read()
             print(content)
     except FileNotFoundError as e:
@@ -18,7 +18,7 @@ def reading():
 def columnNames():
     columns = [f"landmark_{i}_{axis}" for i in range(21) for axis in ['x', 'y', 'z']]
     columns.append('Testing')
-    with open("../Data/Testing2.csv", "a") as file:
+    with open("../../Data/Testing2.csv", "a") as file:
         writer = csv.writer(file)
         writer.writerow(columns)
 
