@@ -24,9 +24,10 @@ pkcs7==0.1.2
 protobuf==4.25.9
 pycparser==3.0
 pycryptodome==3.23.0
-PyP100==0.1.2
+PyP100 @ git+https://github.com/almottier/TapoP100.git@6646003a0fd90f8ff330ef326eb078b5415965ec
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
+python-dotenv==1.2.3
 requests==2.34.2
 scipy==1.17.1
 sentencepiece==0.2.2

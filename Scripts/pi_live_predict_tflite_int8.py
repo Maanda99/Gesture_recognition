@@ -5,7 +5,7 @@ from tflite_runtime.interpreter import Interpreter
 from collections import deque, Counter
 import HandTrackingModule as htm
 import subprocess
-
+import paho.mqtt.client as mqtt
 
 # --- INT8 TFLite live gesture prediction (deployment-ready, no Keras comparison) ---
 
@@ -34,6 +34,38 @@ def read_frame(proc):
     bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_I420)
     return True, bgr
 
+#  ------------------------------------------------ MQTT ------------------------------------------------
+MQTT_BROKER = "localhost"   # Mosquitto running on this same Pi
+MQTT_PORT = 1883
+
+TOPIC_FAN = "home/esp32/fanSpeed"
+TOPIC_RELAY = "home/esp32/relay"
+TOPIC_GESTURE = "home/esp32/gesture"
+
+ACTION_GESTURES = {"thumbs_up", "thumbs_down", "okay", "open_palm", "fist", "peace"}
+
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if reason_code == 0:
+        print("Connected to MQTT broker")
+    else:
+        print(f"MQTT connect failed, reason code: {reason_code}")
+
+def publish_gesture_action(client, gesture):
+    client.publish(TOPIC_GESTURE, gesture, qos=1, retain=False)
+    if gesture == "thumbs_up":
+        client.publish(TOPIC_FAN, "increase", qos=1, retain=False)
+    elif gesture == "thumbs_down":
+        client.publish(TOPIC_FAN, "decrease", qos=1, retain=False)
+    elif gesture == "okay":
+        client.publish(TOPIC_RELAY, "toggle", qos=1, retain=False)
+    elif gesture in ("open_palm", "fist", "peace"):
+        print(f"[BULB STUB] '{gesture}' would trigger PyP100 action — deferred (hardware not installed)")
+    elif gesture == "point":
+        print("[RESERVED] 'point' recognized — no action assigned yet")
+
+
+
+
 
 def main():
     # Load TFLite interpreter + labels once, before the camera loop starts
@@ -44,9 +76,23 @@ def main():
     classes = np.load('../Training/label_classes.npy', allow_pickle=True)
     print("INT8 TFLite interpreter loaded and tensors allocated")
 
+    # MQTT
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="pi5-gesture-publisher")
+    mqtt_client.on_connect = on_connect
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+    mqtt_client.loop_start()
+   
+    fired_gesture = None   # tracks what's already been published for the current hold
+
+    candidate_gesture = None
+    candidate_start_time = None
+    confirm_seconds = 1.5
+
     prevTime = time.time()
     cam_proc = start_camera()
     detector = htm.handDetector()
+
+    
 
     prediction_buffer = deque(maxlen=BUFFER_SIZE)
     displayed_gesture = "..."
@@ -82,9 +128,28 @@ def main():
             prediction_buffer.append(predicted_name)
             most_common = Counter(prediction_buffer).most_common(1)[0][0]
             displayed_gesture = most_common
+
+            if (most_common != candidate_gesture):
+                candidate_gesture = most_common
+                candidate_start_time = time.time()
+                displayed_gesture = "..."
+            
+            else:
+                if(time.time() - candidate_start_time >= confirm_seconds):
+                    displayed_gesture = candidate_gesture
+            
+                    if displayed_gesture in ACTION_GESTURES and displayed_gesture != fired_gesture:
+                        if (len(prediction_buffer) == BUFFER_SIZE):
+                            publish_gesture_action(mqtt_client, displayed_gesture)
+                            fired_gesture = displayed_gesture
+         
         else:
             prediction_buffer.clear()
             displayed_gesture = "..."
+            fired_gesture = None   # hand left frame — next hold of same gesture can fire again
+            candidate_gesture = None
+            candidate_start_time = None
+
 
         currTime = time.time()
         fps = 1 / (currTime - prevTime)
@@ -102,6 +167,9 @@ def main():
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+
+    mqtt_client.loop_stop()
+    mqtt_client.disconnect()
     cam_proc.terminate()
     cam_proc.wait()
 
