@@ -34,6 +34,9 @@ def test_basic_on_off(bulb: PyL530.L530) -> None:
     info = bulb.getDeviceInfo()
     print(f"[BULB] Device info (nickname/state check): "
           f"on={info.get('device_on')}, model={info.get('model', '?')}")
+    
+    info = bulb.getDeviceInfo()
+    print(info)
 
     print("[BULB] turn-Off()")
     bulb.turnOff()
@@ -55,10 +58,28 @@ def test_basic_on_off(bulb: PyL530.L530) -> None:
     bulb.turnOn()
 
 
+COLOUR_CYCLE = [
+    (0, 100),    # red
+    (120, 100),  # green
+    (240, 100),  # blue
+    (280, 80),   # purple
+]
+
+
+def test_colour_cycle(bulb: PyL530.L530, hold_seconds: float = 2.0) -> None:
+    print("\n--- Colour cycle test (setColor) ---")
+    for hue, sat in COLOUR_CYCLE:
+        print(f"[BULB] setColor(hue={hue}, saturation={sat})")
+        bulb.setColor(hue, sat)
+        time.sleep(1.5)
+
+
+
 if __name__ == "__main__":
     bulb = connect_to_bulb()
 
     try:
         test_basic_on_off(bulb)
+        test_colour_cycle(bulb)
     finally:
         print("\n[BULB] Testing complete. Leaving bulb ON")

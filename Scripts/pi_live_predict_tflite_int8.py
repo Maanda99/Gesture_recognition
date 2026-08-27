@@ -6,6 +6,11 @@ from collections import deque, Counter
 import HandTrackingModule as htm
 import subprocess
 import paho.mqtt.client as mqtt
+import smart_bulb as smb
+import logging
+
+logging.getLogger("PyP100.PyP100").setLevel(logging.CRITICAL)
+
 
 # --- INT8 TFLite live gesture prediction (deployment-ready, no Keras comparison) ---
 
@@ -42,7 +47,7 @@ TOPIC_FAN = "home/esp32/fanSpeed"
 TOPIC_RELAY = "home/esp32/relay"
 TOPIC_GESTURE = "home/esp32/gesture"
 
-ACTION_GESTURES = {"thumbs_up", "thumbs_down", "okay", "open_palm", "fist", "peace"}
+ACTION_GESTURES = {"thumbs_up", "thumbs_down", "okay", "open_palm", "fist", "peace", "point"}
 
 def on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code == 0:
@@ -50,21 +55,33 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
     else:
         print(f"MQTT connect failed, reason code: {reason_code}")
 
+
+def get_bulb_connection(bulb):
+    if bulb is None:
+        try:
+            bulb = smb.connect_to_bulb()
+            print("Bulb Connected")
+        except Exception as e:
+            print("Bulb unreachable")
+            bulb = None
+    return bulb
+
+
 def publish_gesture_action(client, gesture):
     client.publish(TOPIC_GESTURE, gesture, qos=1, retain=False)
     if gesture == "thumbs_up":
         client.publish(TOPIC_FAN, "increase", qos=1, retain=False)
+        print("Increase fan speed")
     elif gesture == "thumbs_down":
         client.publish(TOPIC_FAN, "decrease", qos=1, retain=False)
+        print("Decrease fan speed")
     elif gesture == "okay":
         client.publish(TOPIC_RELAY, "toggle", qos=1, retain=False)
+        print("Relay toggle")
     elif gesture in ("open_palm", "fist", "peace"):
-        print(f"[BULB STUB] '{gesture}' would trigger PyP100 action — deferred (hardware not installed)")
+        print(f"Smart Bulb '{gesture}' triggers PyP100 action")
     elif gesture == "point":
         print("[RESERVED] 'point' recognized — no action assigned yet")
-
-
-
 
 
 def main():
@@ -86,7 +103,7 @@ def main():
 
     candidate_gesture = None
     candidate_start_time = None
-    confirm_seconds = 1.5
+    confirm_seconds = 1.0
 
     prevTime = time.time()
     cam_proc = start_camera()
@@ -96,7 +113,14 @@ def main():
 
     prediction_buffer = deque(maxlen=BUFFER_SIZE)
     displayed_gesture = "..."
-    
+
+    try:
+        bulb = smb.connect_to_bulb()
+    except Exception as e:
+        print(f"Bulb unreachable. Reason: {e}")
+        bulb = None
+
+    colour_index = 0  
     #cv2.namedWindow("Hand Tracking Video", cv2.WINDOW_NORMAL)
     #cv2.resizeWindow("Hand Tracking Video", 1280, 960)
     
@@ -142,7 +166,46 @@ def main():
                         if (len(prediction_buffer) == BUFFER_SIZE):
                             publish_gesture_action(mqtt_client, displayed_gesture)
                             fired_gesture = displayed_gesture
-         
+                            
+                            if(fired_gesture == "open_palm"):
+                                bulb = get_bulb_connection(bulb)
+                                if bulb is not None:
+                                    try:
+                                        current_brightness = bulb.getDeviceInfo()['brightness']
+                                        new_brightness = current_brightness + 10
+                                        new_brightness =  min(new_brightness, 100)
+                                        bulb.setBrightness(new_brightness)
+                                    except Exception as e:
+                                        print("Bulb unreachable")
+                                        bulb = None
+
+
+                            elif(fired_gesture == "fist"):
+                                bulb = get_bulb_connection(bulb)
+                                if bulb is not None:
+                                    try:
+                                        current_brightness = bulb.getDeviceInfo()['brightness']
+                                        new_brightness = current_brightness - 10
+                                        new_brightness =  max(new_brightness, 1)
+                                        bulb.setBrightness(new_brightness)
+                                    except Exception as e:
+                                        print("Bulb unreachable")
+                                        bulb = None
+
+
+                            elif(fired_gesture == "peace"):
+                                bulb = get_bulb_connection(bulb)
+                                if bulb is not None:
+                                    try:
+                                        hue, sat = smb.COLOUR_CYCLE[colour_index]
+                                        bulb.setColor(hue, sat)
+                                        colour_index = (colour_index + 1)%len(smb.COLOUR_CYCLE)
+                                    except Exception as e:
+                                        print("Bulb unreachable")
+                                        bulb = None
+
+
+
         else:
             prediction_buffer.clear()
             displayed_gesture = "..."
@@ -155,14 +218,11 @@ def main():
         fps = 1 / (currTime - prevTime)
         prevTime = currTime
 
-        cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN,
-                    3, (255, 255, 255), 3)
+        cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN, 3, (255, 255, 255), 3)
 
-        cv2.putText(img, f"Gesture: {displayed_gesture}", (10
-                                                               , 120), cv2.FONT_HERSHEY_PLAIN,
-                    3, (0, 0, 255), 3)
+        cv2.putText(img, f"Gesture: {displayed_gesture}", (10, 120), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 255), 3)
 
-        cv2.imshow("Hand Tracking Video", img)
+        cv2.imshow("Gesture Recognition System", img)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
