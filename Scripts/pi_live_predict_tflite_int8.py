@@ -1,3 +1,4 @@
+import threading
 import time
 import cv2
 import numpy as np
@@ -56,15 +57,27 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
         print(f"MQTT connect failed, reason code: {reason_code}")
 
 
+
+bulb_state = {"bulb": None, "busy": False, "last": 0}
+
+def _worker():
+    try:
+        bulb_state["bulb"] = smb.connect_to_bulb()
+        print("Bulb Connected")
+    except Exception as e:
+        print(f"Bulb unreachable: {e}")
+    bulb_state["busy"] = False
+
 def get_bulb_connection(bulb):
-    if bulb is None:
-        try:
-            bulb = smb.connect_to_bulb()
-            print("Bulb Connected")
-        except Exception as e:
-            print("Bulb unreachable")
-            bulb = None
-    return bulb
+    if bulb is not None:
+        return bulb
+    if bulb_state["bulb"] is not None:
+        return bulb_state["bulb"]
+    if not bulb_state["busy"] and time.time() - bulb_state["last"] > 30:
+        bulb_state["busy"] = True
+        bulb_state["last"] = time.time()
+        threading.Thread(target=_worker, daemon=True).start()
+    return None
 
 
 def publish_gesture_action(client, gesture):
@@ -81,7 +94,7 @@ def publish_gesture_action(client, gesture):
     elif gesture in ("open_palm", "fist", "peace"):
         print(f"Smart Bulb '{gesture}' triggers PyP100 action")
     elif gesture == "point":
-        print("[RESERVED] 'point' recognized — no action assigned yet")
+        print("Smart Bulb toggle")
 
 
 def main():
@@ -172,7 +185,7 @@ def main():
                                 if bulb is not None:
                                     try:
                                         current_brightness = bulb.getDeviceInfo()['brightness']
-                                        new_brightness = current_brightness + 10
+                                        new_brightness = current_brightness + 20
                                         new_brightness =  min(new_brightness, 100)
                                         bulb.setBrightness(new_brightness)
                                     except Exception as e:
@@ -185,7 +198,7 @@ def main():
                                 if bulb is not None:
                                     try:
                                         current_brightness = bulb.getDeviceInfo()['brightness']
-                                        new_brightness = current_brightness - 10
+                                        new_brightness = current_brightness - 20
                                         new_brightness =  max(new_brightness, 1)
                                         bulb.setBrightness(new_brightness)
                                     except Exception as e:
@@ -204,6 +217,15 @@ def main():
                                         print("Bulb unreachable")
                                         bulb = None
 
+
+                            elif(fired_gesture == "point"):
+                                bulb = get_bulb_connection(bulb)
+                                if bulb is not None:
+                                    try:
+                                        bulb.toggleState() 
+                                    except Exception as e:
+                                        print("Bulb unreachable")
+                                        bulb = None
 
 
         else:
