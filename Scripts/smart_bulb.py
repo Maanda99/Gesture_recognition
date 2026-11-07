@@ -51,18 +51,32 @@ def find_bulb_ip(mac: str, retries: int = 3) -> str:
     raise RuntimeError(f"Could not find a device with MAC {mac} on the network.")
 
 
+ip_failed_count = 0
+
 def connect_to_bulb() -> PyL530.L530:
+    global ip_failed_count
     email = get_required_env("MY_EMAIL")
     password = get_required_env("MY_PASSWORD")
-    bulb_mac = get_required_env("TAPO_BULB_MAC")
+    
+    # Priority: Try the .env IP first. Fallback to MAC discovery after 3 failures.
+    if ip_failed_count < 3:
+        target_ip = get_required_env("TAPO_BULB_IP")
+    else:
+        print("[BULB] IP failed 3x. Falling back to MAC discovery...")
+        target_ip = find_bulb_ip(get_required_env("TAPO_BULB_MAC"))
+        ip_failed_count = 0
 
-    bulb_ip = find_bulb_ip(bulb_mac)
+    print(f"[BULB] Connecting to {target_ip}...")
+    try:
+        bulb = PyL530.L530(target_ip, email, password)
+        bulb.handshake() # Verifies the connection works
+        ip_failed_count = 0  # Reset counter on success
+        print("[BULB] Auth OK.")
+        return bulb
+    except Exception as e:
+        ip_failed_count += 1
+        raise e
 
-    print(f"[BULB] Connecting to {bulb_ip} (protocol auto-negotiated) ...")
-    bulb = PyL530.L530(bulb_ip, email, password)
-
-    print("[BULB] Auth OK.")
-    return bulb
 
 COLOUR_CYCLE = [
     (8, 40),
