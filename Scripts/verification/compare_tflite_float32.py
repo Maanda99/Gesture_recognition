@@ -27,6 +27,7 @@ def main():
     detector = htm.handDetector()
 
     frame_count = 0
+    match_count = 0
     MAX_COMPARISON_FRAMES = 30  # stop printing after this many hand-detected frames
 
     while True:
@@ -61,10 +62,17 @@ def main():
             tflite_name = classes[tflite_index]
 
             # --- Compare ---
+            is_match = keras_name == tflite_name
+            match_count += int(is_match)
             match = "MATCH" if keras_name == tflite_name else "MISMATCH"
             print(f"Frame {frame_count}: Keras={keras_name} | TFLite={tflite_name} | {match}")
 
             frame_count += 1
+
+            if frame_count == MAX_COMPARISON_FRAMES:
+                print("TensorFlow Lite Float32")
+                print(f"\nFinal agreement: {match_count}/{MAX_COMPARISON_FRAMES} "
+                      f"({100 * match_count / MAX_COMPARISON_FRAMES:.1f}%)")
 
         currTime = time.time()
         fps = 1 / (currTime - prevTime)

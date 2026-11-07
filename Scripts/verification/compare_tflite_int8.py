@@ -71,6 +71,7 @@ def main():
             frame_count += 1
 
             if frame_count == MAX_COMPARISON_FRAMES:
+                print("TensorFlow Lite INT8")
                 print(f"\nFinal agreement: {match_count}/{MAX_COMPARISON_FRAMES} "
                       f"({100 * match_count / MAX_COMPARISON_FRAMES:.1f}%)")
 
