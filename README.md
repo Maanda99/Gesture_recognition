@@ -1,120 +1,130 @@
 # Computer Vision Gesture Recognition System
 
-A real-time hand gesture recognition system for touchless control of physical
-devices, built as a final-year capstone project (GA11). Motivated by
-accessibility use cases for non-verbal users — recognized gestures trigger a
-fan, a smart bulb, and a relay-controlled device, with live status shown on
-an LCD.
+A real-time hand gesture recognition system for touchless control of physical devices. A camera feeds hand landmarks into a quantized CNN running on a Raspberry Pi 5, and recognised gestures are sent over MQTT to an ESP32 (relay, fan, LCD) and directly to a smart bulb.
 
-## Pipeline
-Camera (rpicam-vid) → MediaPipe hand landmarks → TFLite INT8 CNN inference
-→ gesture smoothing + confirmation buffer → MQTT (QoS1) → ESP32 (PubSubClient)
-→ 20x4 I2C LCD / two-channel relay / DC fan motor
+**Motivation:** give people who can't use voice-based interfaces a non-verbal, touchless way to control technology.
 
-                 Raspberry Pi 5 also drives a TP-Link Tapo L530E
-                 smart bulb directly over the local network (KLAP protocol)
+---
 
+## How it works
 
-## Recognized gestures
+```
+Camera → MediaPipe → CNN (TFLite INT8, Pi 5) → MQTT (Mosquitto on Pi) → ESP32 → actuators
+                                      └──────→ Tapo L530E smart bulb (direct from Pi)
+```
 
-| Gesture      | Action                                      |
-|--------------|----------------------------------------------|
-| `thumbs_up`   | Increase fan speed                           |
-| `thumbs_down` | Decrease fan speed                           |
-| `okay`        | Toggle relay                                 |
-| `open_palm`   | Increase bulb brightness (+10, capped at 100)|
-| `fist`        | Decrease bulb brightness (-10, floor at 1)   |
-| `peace`       | Step to next colour in bulb colour cycle     |
-| `point`       | Reserved — no action assigned yet            |
+1. **Capture:** the Pi 5 camera is read through an `rpicam-vid` pipe (YUV420 frames).
+2. **Landmarks:** MediaPipe extracts hand landmarks from each frame.
+3. **Classification:** a 1D CNN, converted to TFLite with INT8 weight quantization, classifies the gesture.
+4. **Confirmation:** a 7-frame majority vote feeds a hold timer. A gesture must be held continuously for 1.5 s before it fires, and fires once per hold.
+5. **Actuation:** the Pi publishes to MQTT (QoS 1, not retained). The ESP32 drives the relay, fan and LCD. The Pi controls the bulb itself.
+
+## Gesture mapping
+
+| Gesture | Action |
+|---|---|
+| `open_palm` | Bulb brightness +10 (max 100) |
+| `fist` | Bulb brightness −10 (min 1) |
+| `peace` | Cycle bulb colour |
+| `thumbs_up` | Fan speed up |
+| `thumbs_down` | Fan speed down |
+| `okay` | Toggle relay |
+| `point` | Toggle bulb on/off |
 
 ## Hardware
 
-- Raspberry Pi 5
+- Raspberry Pi 5 + Pi camera
 - ESP32
+- TP-Link Tapo L530E smart bulb
 - 20x4 I2C LCD
-- Two-channel relay module
-- DC fan motor + IRLZ44 MOSFET + 1N4007 flyback diode + adjustable buck
-  module (470µF cap across buck V+/GND — required to prevent PWM-induced
-  brownout resets on the ESP32; see deviations below)
-- TP-Link Tapo L530E smart bulb (firmware 1.4.4, KLAP protocol)
+- 2-channel relay module
+- IRLZ44 MOSFET, 1N4007 flyback diode, 470 µF decoupling capacitor
+- LM2596 buck module, 12 V / 2 A supply with barrel jack breakout
+- Joystick DC motor (used as the fan motor)
 
-## Software setup (Raspberry Pi)
+## Repository layout
 
-Python 3.11.9, virtual environment at `.venv`. Key pinned dependencies:
-numpy==1.26.4
-opencv-contrib-python==4.11.0.86
-mediapipe==0.10.18
-tflite-runtime==2.14.0
-paho-mqtt==2.1.0
-almottier/TapoP100 (git, main branch — KLAP protocol support)
-python-dotenv
+```
+HandTracking/
+├── Data/           Training and held-out test datasets (CSV)
+├── Training/       Dense and CNN training + evaluation scripts, label classes
+├── Model/          Trained Keras and TFLite (float32 / INT8) models
+├── Scripts/        Data collection, TFLite conversion, quantization, live inference
+│   └── verification/   Keras vs TFLite comparison scripts
+├── RaspberryPi/    Pi inference + MQTT + bulb control, bulb test script
+└── ESP32/          Firmware (.ino) and secrets template
+```
 
+## Setup
 
+### Software versions
 
-### Credentials
+Python 3.11 (built from source on the Pi), TensorFlow 2.15.1 / Keras 2.15.0, MediaPipe 0.10.18, TFLite runtime 2.14.0, OpenCV `opencv-contrib-python==4.11.0.86`, paho-mqtt, python-dotenv, and the `almottier/TapoP100` fork of PyP100.
 
-Copy the example files and fill in real values — both are gitignored:
+> **Pin OpenCV to 4.11.0.86.** Version 5.x forces numpy ≥ 2, which breaks `tflite-runtime==2.14.0`.
+
+> **Use the `almottier/TapoP100` fork.** The PyPI release of PyP100 only supports the legacy protocol; current bulb firmware needs KLAP.
+
+### 1. Credentials
+
+Credentials are gitignored. Copy the templates and fill them in:
+
+- Raspberry Pi: copy `.env.example` to `.env` (Tapo account and bulb details)
+- ESP32: copy the `secrets.h` example template to `secrets.h` (Wi-Fi and MQTT broker details)
+
+### 2. MQTT broker (Raspberry Pi)
+
+Install Mosquitto and add to its config:
+
+```
+listener 1883 0.0.0.0
+allow_anonymous true
+```
+
+> Anonymous access is fine for a closed local demo network but is **not** secure. Enable authentication before using this anywhere else.
+
+### 3. Run on the Pi
 
 ```bash
-cp .env.example .env
+python RaspberryPi/pi_live_predict_tflite_int8.py
 ```
 
-`.env` requires:
+### 4. Flash the ESP32
 
-MY_EMAIL=your_tapo_account_email
-MY_PASSWORD=your_tapo_account_password
-TAPO_BULB_IP=192.168.x.x
+Open the `.ino` in the Arduino IDE, make sure `secrets.h` sits in the same folder, then upload.
 
+## MQTT topics
 
+| Topic | Purpose |
+|---|---|
+| `home/esp32/gesture` | Current gesture shown on the LCD |
+| `home/esp32/fanSpeed` | Fan speed |
+| `home/esp32/relay` | Relay toggle |
+| `home/esp32/lcd` | Reserved debug channel (backlight / clear), unused by the main publisher |
 
-## ESP32 firmware
+## Training and evaluation
 
-Arduino IDE. Subscribes to `home/esp32/fanSpeed`, `home/esp32/gesture`,
-`home/esp32/relay`. Non-blocking PWM ramp for the fan (5-unit steps every
-100ms via `millis()`) to avoid the ground-bounce brownout issue noted below.
+- **Dataset:** 4,200 training rows and 700 held-out test rows across 7 gestures, collected in interleaved rotation to limit session drift.
+- **Models:** a dense network and a 1D CNN, each exported to TFLite float32 and INT8.
+- **Quantization:** INT8 is weight-only. Inputs and outputs stay float32, which suits the Pi 5's general-purpose CPU.
+- **Model sizes:** CNN `.h5` ≈ 477 KB, TFLite float32 ≈ 149 KB, TFLite INT8 ≈ 42 KB.
 
-### Credentials
+Scripts in `Scripts/verification/` compare Keras and TFLite predictions live on a webcam.
 
-```bash
-cp secrets.h.example secrets.h
-```
+## Known limitations and lessons learned
 
-`secrets.h` requires:
-```cpp
-#define WIFI_SSID "your_network"
-#define WIFI_PASSWORD "your_password"
-#define MQTT_BROKER_IP "192.168.x.x"
-```
+- **Test split:** the original test split had temporal leakage; a fresh held-out set was collected to replace it.
+- **Camera on Pi 5:** raw V4L2 fails on the RP1-CFE interface (`VIDIOC_STREAMON: Invalid argument`), so frames come from an `rpicam-vid` pipe.
+- **MediaPipe version:** 0.10.18 is used because no aarch64 wheel exists for 0.10.21.
+- **Bulb power:** the relay must not cut mains to the smart bulb, since that drops its Wi-Fi and breaks the API connection. The relay switches secondary devices only.
+- **Grounding:** a shared ground between the ESP32 and motor circuit caused brownout resets. Use separate grounds and place the decoupling capacitor across the buck module's V+/GND.
+- **Motor:** a joystick DC motor stands in for the originally planned 5 V fan.
+- **No authentication** on the MQTT broker (see above).
 
-## MQTT
+## Tech stack
 
-Mosquitto broker running locally on the Pi (`listener 1883 0.0.0.0`).
-Anonymous access is enabled — documented as an accepted limitation for a
-closed local-network demo, not suitable for production use.
+Python, TensorFlow / Keras, TensorFlow Lite, MediaPipe, OpenCV, MQTT (Mosquitto, paho-mqtt), ESP32 (Arduino C++), Raspberry Pi 5.
 
-## Known limitations / documented deviations
+## Author
 
-- **LCD display simplified** to a single static screen (header, gesture,
-  fan state, bulb state) rather than the originally proposed 3-mode
-  scene system (Relax/Sleep/Bright), since bulb hardware installation
-  and state verification were not complete in time to support it honestly.
-- **Motor circuit is breadboard, not soldered** — tooling was inadequate;
-  documented as a GA11 Time & Change Management deviation.
-- **Bulb reconnects on every gesture trigger** rather than persisting a
-  connection across the session — acceptable given negligible handshake
-  latency observed in testing.
-- **ESP32 MQTT client has been observed to disconnect intermittently at
-  random**, self-recovering via `PubSubClient` reconnect logic. Root
-  cause not fully diagnosed; suspected AP-side flakiness rather than a
-  code fault, since the Pi-side client and hardware ramp logic are
-  unaffected.
-- **Model evaluation**: original train/test split showed inflated accuracy
-  due to temporal leakage (near-duplicate frames from continuous chronological
-  capture); a separately collected 700-row held-out set was used for a
-  valid accuracy estimate.
-
-## Project principle
-
-Known limitations and scope deviations are documented explicitly rather
-than suppressed. This README and the accompanying GA11 report aim to
-reflect the system as it actually behaves, including its trade-offs.
+Maanda — [@Maanda99](https://github.com/Maanda99)
